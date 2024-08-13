@@ -7,7 +7,6 @@ import dev.mrshawn.deathmessages.api.PlayerManager;
 import dev.mrshawn.deathmessages.config.Messages;
 import dev.mrshawn.deathmessages.files.Config;
 import dev.mrshawn.deathmessages.files.FileSettings;
-import dev.mrshawn.deathmessages.utils.Assets;
 import net.md_5.bungee.api.chat.BaseComponent;
 import net.md_5.bungee.api.chat.TextComponent;
 import net.md_5.bungee.chat.ComponentSerializer;
@@ -20,6 +19,8 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.util.List;
+
+import static dev.mrshawn.deathmessages.DeathMessages.warn;
 
 
 public class PluginMessaging implements PluginMessageListener {
@@ -41,7 +42,7 @@ public class PluginMessaging implements PluginMessageListener {
                     String[] data = in.readUTF().split("######");
                     String serverName2 = data[0];
                     String rawMsg = data[1];
-                    BaseComponent textComponent = new TextComponent(Assets.colorize(Messages.getInstance().getConfig().getString("Bungee.Message", "")
+                    BaseComponent textComponent = new TextComponent(Messages.colorize(Messages.getInstance().getConfig().getString("Bungee.Message", "")
                             .replace("%server_name%", serverName2)));
                     BaseComponent textComponent2 = new TextComponent(ComponentSerializer.parse(rawMsg));
                     for (Player pls : Bukkit.getOnlinePlayers()) {
@@ -52,7 +53,7 @@ public class PluginMessaging implements PluginMessageListener {
                     }
                 }
             } catch (Exception e) {
-                e.printStackTrace();
+                warn(e);
             }
         }
     }

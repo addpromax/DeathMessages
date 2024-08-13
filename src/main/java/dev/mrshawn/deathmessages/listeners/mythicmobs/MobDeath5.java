@@ -3,12 +3,13 @@ package dev.mrshawn.deathmessages.listeners.mythicmobs;
 import dev.mrshawn.deathmessages.api.EntityManager;
 import dev.mrshawn.deathmessages.api.PlayerManager;
 import dev.mrshawn.deathmessages.api.events.BroadcastEntityDeathMessageEvent;
+import dev.mrshawn.deathmessages.config.Messages;
 import dev.mrshawn.deathmessages.config.Settings;
 import dev.mrshawn.deathmessages.enums.MessageType;
 import dev.mrshawn.deathmessages.enums.MobType;
 import dev.mrshawn.deathmessages.files.Config;
 import dev.mrshawn.deathmessages.files.FileSettings;
-import dev.mrshawn.deathmessages.utils.Assets;
+import dev.mrshawn.deathmessages.utils.DeathResolver;
 import io.lumine.mythic.bukkit.events.MythicMobDeathEvent;
 import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
@@ -39,7 +40,7 @@ public class MobDeath5 implements Listener {
                 if (em == null || em.getLastPlayerDamager() == null) return;
 
                 PlayerManager damager = em.getLastPlayerDamager();
-                TextComponent tx = Assets.entityDeathMessage(em, MobType.MYTHIC_MOB);
+                TextComponent tx = DeathResolver.entityDeathMessage(em, MobType.MYTHIC_MOB);
                 if (tx == null) return;
 
                 BroadcastEntityDeathMessageEvent event = new BroadcastEntityDeathMessageEvent(damager, e.getEntity(), MessageType.ENTITY, tx, getWorlds(e.getEntity()));
@@ -74,6 +75,6 @@ public class MobDeath5 implements Listener {
     }
 
     public static FileConfiguration getEntityDeathMessages() {
-        return Assets.getEntityDeathMessages();
+        return Messages.getEntityDeathMessages();
     }
 }

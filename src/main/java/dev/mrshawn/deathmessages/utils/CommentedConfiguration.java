@@ -1,5 +1,7 @@
 package dev.mrshawn.deathmessages.utils;
 
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.InvalidConfigurationException;
@@ -9,6 +11,8 @@ import org.jetbrains.annotations.NotNull;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+
+import static dev.mrshawn.deathmessages.DeathMessages.warn;
 
 
 public final class CommentedConfiguration extends YamlConfiguration {
@@ -21,7 +25,7 @@ public final class CommentedConfiguration extends YamlConfiguration {
         }
         CommentedConfiguration cfg = loadConfiguration(resource);
         ConfigurationSection section = cfg.getConfigurationSection("");
-        if (section != null && syncConfigurationSection(cfg, section, Arrays.asList(ignoredSections)) && file != null) {
+        if (section != null && syncConfigurationSection(section, Arrays.asList(ignoredSections)) && file != null) {
             save(file);
         }
     }
@@ -30,7 +34,8 @@ public final class CommentedConfiguration extends YamlConfiguration {
         if (comment == null) {
             this.configComments.remove(path);
         } else {
-            this.configComments.put(path, comment);
+            Set<String> set = Sets.newHashSet(comment.split("\n"));
+            this.configComments.put(path, String.join("\n", set));
         }
     }
 
@@ -70,7 +75,7 @@ public final class CommentedConfiguration extends YamlConfiguration {
 
     @NotNull
     public String saveToString() {
-        List<String> lines = new ArrayList<>(Arrays.asList(super.saveToString().split("\n")));
+        List<String> lines = Lists.newArrayList(super.saveToString().split("\n"));
         int currentIndex = 0;
         String currentSection = "";
         while (currentIndex < lines.size()) {
@@ -91,7 +96,7 @@ public final class CommentedConfiguration extends YamlConfiguration {
         return contents.length() == 0 ? "" : contents.substring(1);
     }
 
-    private boolean syncConfigurationSection(CommentedConfiguration commentedConfig, ConfigurationSection section, List<String> ignoredSections) {
+    private boolean syncConfigurationSection(ConfigurationSection section, List<String> ignoredSections) {
         boolean changed = false;
         for (String key : section.getKeys(false)) {
             String current = section.getCurrentPath();
@@ -103,14 +108,10 @@ public final class CommentedConfiguration extends YamlConfiguration {
                 boolean containsSection = contains(path);
                 ConfigurationSection section1 = section.getConfigurationSection(key);
                 if (section1 != null && (!containsSection || !isIgnored)) {
-                    changed = syncConfigurationSection(commentedConfig, section1, ignoredSections) || changed;
+                    changed = syncConfigurationSection(section1, ignoredSections) || changed;
                 }
             } else if (!contains(path)) {
                 set(path, section.get(key));
-                changed = true;
-            }
-            if (commentedConfig.containsComment(path) && !commentedConfig.getComment(path).equals(getComment(path))) {
-                setComment(path, commentedConfig.getComment(path));
                 changed = true;
             }
         }
@@ -156,7 +157,7 @@ public final class CommentedConfiguration extends YamlConfiguration {
             config.loadFromString(contents.toString());
         } catch (IOException | InvalidConfigurationException ex) {
             config.flagAsFailed();
-            ex.printStackTrace();
+            warn(ex);
         }
         return config;
     }
