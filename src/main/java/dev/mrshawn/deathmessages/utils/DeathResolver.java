@@ -1,6 +1,5 @@
 package dev.mrshawn.deathmessages.utils;
 
-import de.tr7zw.nbtapi.NBTItem;
 import dev.mrshawn.deathmessages.DeathMessages;
 import dev.mrshawn.deathmessages.api.EntityManager;
 import dev.mrshawn.deathmessages.api.ExplosionManager;
@@ -22,13 +21,19 @@ import net.md_5.bungee.api.chat.hover.content.Text;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.damage.DamageSource;
 import org.bukkit.entity.*;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
+import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
@@ -37,12 +42,57 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static dev.mrshawn.deathmessages.DeathMessages.majorVersion;
-import static dev.mrshawn.deathmessages.config.Messages.bungee;
+import static dev.mrshawn.deathmessages.config.Messages.parseBungee;
 import static org.bukkit.event.entity.EntityDamageEvent.DamageCause.*;
 
 public class DeathResolver {
     private static final FileSettings<Config> config = FileSettings.CONFIG;
     private static final boolean addPrefix = config.getBoolean(Config.ADD_PREFIX_TO_ALL_MESSAGES);
+    public static final boolean supportDamageSource = testDamageSource();
+    private static Method damageSourceGetHandle;
+    private static boolean testDamageSource() {
+        try {
+            Class.forName("org.bukkit.damage.DamageSource");
+            EntityDamageEvent.class.getDeclaredMethod("getDamageSource");
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+    @Nullable
+    @SuppressWarnings("UnstableApiUsage")
+    public static String getDamageSourceMsgId(EntityDamageEvent e) {
+        if (!supportDamageSource) return null;
+        try {
+            DamageSource source = e.getDamageSource();
+            Class<? extends DamageSource> type = source.getClass();
+            if (damageSourceGetHandle == null) {
+                // org.bukkit.craftbukkit.v*_*_R*.damage.CraftDamageSource#getHandle
+                damageSourceGetHandle = type.getDeclaredMethod("getHandle");
+            }
+            // net.minecraft.world.damagesource.DamageSource#toString
+            // "DamageSource (" + this.type().msgId() + ")"
+            String string = String.valueOf(damageSourceGetHandle.invoke(source));
+            if (string.startsWith("DamageSource (") && string.endsWith(")")) {
+                return string.substring(14, string.length() - 1);
+            } else {
+                return string; // 用于测试
+            }
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    @NotNull
+    private static List<String> getStringList(ConfigurationSection section, String parent, String... keys) {
+        for (@Nullable String key : keys) {
+            if (key == null) continue;
+            List<String> list = section.getStringList(parent + key);
+            if (list.isEmpty()) continue;
+            return list;
+        }
+        return new ArrayList<>();
+    }
 
     public static boolean isClimbable(Block block) {
         return isClimbable(block.getType());
@@ -54,7 +104,7 @@ public class DeathResolver {
     }
 
     public static boolean isWeaponByItemName(ItemStack item) {
-        if (item == null || item.getType().isAir()) return false;
+        if (item == null || item.getType().equals(Material.AIR)) return false;
         List<String> list = config.getStringList(Config.CUSTOM_ITEM_DISPLAY_NAMES_IS_WEAPON);
         if (list.isEmpty()) return true;
         ItemMeta meta = item.hasItemMeta() ? item.getItemMeta() : null;
@@ -69,7 +119,7 @@ public class DeathResolver {
     }
 
     public static boolean isWeaponByItemMaterial(ItemStack item) {
-        if (item == null || item.getType().isAir()) return false;
+        if (item == null || item.getType().equals(Material.AIR)) return false;
         List<String> list = config.getStringList(Config.CUSTOM_ITEM_MATERIAL_IS_WEAPON);
         if (list.isEmpty()) return true;
         for (String s : list) {
@@ -83,29 +133,29 @@ public class DeathResolver {
         return isWeaponByItemName(item) && isWeaponByItemMaterial(item);
     }
 
-    @SuppressWarnings({"deprecation"})
     public static boolean hasWeapon(LivingEntity mob, EntityDamageEvent.DamageCause cause) {
         EntityEquipment e = mob.getEquipment();
-        return e != null && !cause.equals(THORNS) && isWeapon(majorVersion() < 9 ? e.getItemInHand() : e.getItemInMainHand());
+        return e != null && !cause.equals(THORNS) && isWeapon(getItemInHand(e));
     }
 
     public static TextComponent playerDeathMessage(PlayerManager pm, boolean gang) {
         LivingEntity mob = (LivingEntity) pm.getLastEntityDamager();
         EntityDamageEvent.DamageCause cause = pm.getLastDamage();
+        String msgId = pm.getDamageSourceMsgId();
         boolean hasWeapon = hasWeapon(mob, cause);
         if (cause.equals(ENTITY_EXPLOSION)) {
             Entity exp = pm.getLastExplosiveEntity();
-            if (exp instanceof EnderCrystal) return get(gang, pm, mob, "End-Crystal");
-            if (exp instanceof TNTPrimed) return get(gang, pm, mob, "TNT");
-            if (exp instanceof Firework) return get(gang, pm, mob, "Firework");
-            return get(gang, pm, mob, Messages.getSimpleCause(ENTITY_EXPLOSION));
+            if (exp instanceof EnderCrystal) return get(gang, pm, mob, "End-Crystal", msgId);
+            if (exp instanceof TNTPrimed) return get(gang, pm, mob, "TNT", msgId);
+            if (exp instanceof Firework) return get(gang, pm, mob, "Firework", msgId);
+            return get(gang, pm, mob, Messages.getSimpleCause(ENTITY_EXPLOSION), msgId);
         }
         if (cause.equals(BLOCK_EXPLOSION)) {
             ExplosionManager manager = ExplosionManager.getManagerIfEffected(pm.getUUID());
             if (manager != null) {
                 String m = manager.getMaterial().name().toUpperCase();
-                if (m.contains("BED")) return get(gang, pm, manager.getPyro(), "Bed");
-                if (m.equals("RESPAWN_ANCHOR")) return get(gang, pm, manager.getPyro(), "Respawn-Anchor");
+                if (m.contains("BED")) return get(gang, pm, manager.getPyro(), "Bed", msgId);
+                if (m.equals("RESPAWN_ANCHOR")) return get(gang, pm, manager.getPyro(), "Respawn-Anchor", msgId);
             }
         }
         Projectile ep = pm.getLastProjectileEntity();
@@ -113,11 +163,11 @@ public class DeathResolver {
             if (cause.equals(ENTITY_ATTACK)) return getWeapon(gang, pm, mob);
             if (cause.equals(PROJECTILE) && (getSettings().getBoolean("Ignore-Projectile-Type") || ep instanceof Arrow))
                 return getProjectile(gang, pm, mob, Messages.getSimpleProjectile(ep));
-            return get(gang, pm, mob, Messages.getSimpleCause(ENTITY_ATTACK));
+            return get(gang, pm, mob, Messages.getSimpleCause(ENTITY_ATTACK), msgId);
         }
         for (EntityDamageEvent.DamageCause dc : EntityDamageEvent.DamageCause.values()) {
             if (cause.equals(PROJECTILE)) return getProjectile(gang, pm, mob, Messages.getSimpleProjectile(ep));
-            if (cause.equals(dc)) return get(gang, pm, mob, Messages.getSimpleCause(dc));
+            if (cause.equals(dc)) return get(gang, pm, mob, Messages.getSimpleCause(dc), msgId);
         }
         return null;
     }
@@ -127,18 +177,19 @@ public class DeathResolver {
         Player p = pm.getPlayer();
         boolean hasWeapon = hasWeapon(p, pm.getLastDamage());
         EntityDamageEvent.DamageCause cause = em.getLastDamage();
+        String msgId = em.getDamageSourceMsgId();
         if (cause.equals(ENTITY_EXPLOSION)) {
-            if (em.getLastExplosiveEntity() instanceof EnderCrystal) return getEntityDeath(p, em.getEntity(), "End-Crystal", mobType);
-            if (em.getLastExplosiveEntity() instanceof TNTPrimed) return getEntityDeath(p, em.getEntity(), "TNT", mobType);
-            if (em.getLastExplosiveEntity() instanceof Firework) return getEntityDeath(p, em.getEntity(), "Firework", mobType);
-            return getEntityDeath(p, em.getEntity(), Messages.getSimpleCause(ENTITY_EXPLOSION), mobType);
+            if (em.getLastExplosiveEntity() instanceof EnderCrystal) return getEntityDeath(p, em.getEntity(), "End-Crystal", mobType, msgId);
+            if (em.getLastExplosiveEntity() instanceof TNTPrimed) return getEntityDeath(p, em.getEntity(), "TNT", mobType, msgId);
+            if (em.getLastExplosiveEntity() instanceof Firework) return getEntityDeath(p, em.getEntity(), "Firework", mobType, msgId);
+            return getEntityDeath(p, em.getEntity(), Messages.getSimpleCause(ENTITY_EXPLOSION), mobType, msgId);
         }
         if (cause.equals(BLOCK_EXPLOSION)) {
             ExplosionManager manager = ExplosionManager.getManagerIfEffected(em.getEntityUUID());
             if (manager != null) {
                 String m = manager.getMaterial().name().toUpperCase();
-                if (m.contains("BED")) return getEntityDeath(manager.getPyro(), em.getEntity(), "Bed", mobType);
-                if (m.equals("RESPAWN_ANCHOR")) return getEntityDeath(manager.getPyro(), em.getEntity(), "Respawn-Anchor", mobType);
+                if (m.contains("BED")) return getEntityDeath(manager.getPyro(), em.getEntity(), "Bed", mobType, msgId);
+                if (m.equals("RESPAWN_ANCHOR")) return getEntityDeath(manager.getPyro(), em.getEntity(), "Respawn-Anchor", mobType, msgId);
             }
         }
         Projectile ep = em.getLastProjectileEntity();
@@ -150,13 +201,17 @@ public class DeathResolver {
         }
         for (EntityDamageEvent.DamageCause dc : EntityDamageEvent.DamageCause.values()) {
             if (cause.equals(PROJECTILE)) return getEntityDeathProjectile(p, em, Messages.getSimpleProjectile(ep), mobType);
-            if (cause.equals(dc)) return getEntityDeath(p, em.getEntity(), Messages.getSimpleCause(dc), mobType);
+            if (cause.equals(dc)) return getEntityDeath(p, em.getEntity(), Messages.getSimpleCause(dc), mobType, msgId);
         }
         return null;
     }
 
-    @SuppressWarnings({"deprecation"})
-    public static TextComponent solveWeapon(String splitMessage, ItemStack i, String displayName) {
+    @Deprecated
+    public static TextComponent resolveWeapon(String splitMessage, ItemStack i, String displayName) {
+        return new TextComponent(parseWeapon(splitMessage, i, displayName));
+    }
+
+    public static BaseComponent parseWeapon(String splitMessage, ItemStack i, String displayName) {
         String[] spl = splitMessage.split("%weapon%");
         if (spl.length != 0 && spl[0] != null && !spl[0].isEmpty()) {
             displayName = Messages.colorize(spl[0]) + displayName;
@@ -164,9 +219,8 @@ public class DeathResolver {
         if (spl.length != 0 && spl.length != 1 && spl[1] != null && !spl[1].isEmpty()) {
             displayName = displayName + Messages.colorize(spl[1]);
         }
-        TextComponent weaponComp = bungee(displayName);
-        BaseComponent[] hoverEventComponents = {new TextComponent(NBTItem.convertItemtoNBT(i).getCompound().toString())};
-        weaponComp.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_ITEM, hoverEventComponents));
+        BaseComponent weaponComp = parseBungee(displayName);
+        weaponComp.setHoverEvent(HoverShowItemResolver.toHoverEvent(i));
         return weaponComp;
     }
 
@@ -186,12 +240,16 @@ public class DeathResolver {
         return tc;
     }
 
-    @SuppressWarnings({"deprecation"})
     public static TextComponent getNaturalDeath(PlayerManager pm, String damageCause) {
-        List<String> msgs = Messages.sortList(Messages.getPlayerDeathMessages().getStringList("Natural-Cause." + damageCause), pm.getPlayer(), pm.getPlayer());
+        return getNaturalDeath(pm, damageCause, null);
+    }
+
+    public static TextComponent getNaturalDeath(PlayerManager pm, String damageCause, @Nullable String msgId) {
+        List<String> unsortedMessages = getStringList(Messages.getPlayerDeathMessages(), "Natural-Cause.", msgId, damageCause);
+        List<String> msgs = Messages.sortList(unsortedMessages, pm.getPlayer(), pm.getPlayer());
         if (msgs.isEmpty()) return null;
         TextComponent tc = new TextComponent("");
-        if (addPrefix) tc.addExtra(bungee(Messages.getInstance().getConfig().getString("Prefix", "")));
+        if (addPrefix) tc.addExtra(parseBungee(Messages.getInstance().getConfig().getString("Prefix", "")));
         String msg = msgs.get(new Random().nextInt(msgs.size()));
         String[] sec = msg.split("::");
         String firstSection = msg.contains("::") ? (sec.length == 0 ? msg : sec[0]) : msg;
@@ -220,7 +278,7 @@ public class DeathResolver {
                 tc.addExtra(mssa2);
                 lastColor = Messages.getColorOfString(lastColor + mssa2);
             } else if (pm.getLastDamage().equals(PROJECTILE) && splitMessage.contains("%weapon%") && equipment != null) {
-                ItemStack i = majorVersion() <= 9 ? equipment.getItemInHand() : equipment.getItemInMainHand();
+                ItemStack i = getItemInHand(equipment);
                 String m = i.getType().name().toUpperCase();
                 if (!m.equals("BOW") && !m.equals("CROSSBOW")) return getNaturalDeath(pm, "Projectile-Unknown");
                 String displayName;
@@ -234,9 +292,9 @@ public class DeathResolver {
                 } else {
                     displayName = Messages.getCustomName(i, pm.getPlayer());
                 }
-                tc.addExtra(solveWeapon(splitMessage, i, displayName));
+                tc.addExtra(parseWeapon(splitMessage, i, displayName));
             } else {
-                TextComponent tx = bungee(playerDeathPlaceholders(lastColor + lastFont + splitMessage, pm, null) + " ");
+                BaseComponent tx = parseBungee(playerDeathPlaceholders(lastColor + lastFont + splitMessage, pm, null) + " ");
                 tc.addExtra(tx);
                 for (BaseComponent bs : tx.getExtra()) {
                     if (bs.getColor() != null) lastColor = bs.getColor().toString();
@@ -247,7 +305,6 @@ public class DeathResolver {
         return addHoverAndClick(tc, sec, cmd -> playerDeathPlaceholders(cmd, pm, null));
     }
 
-    @SuppressWarnings({"deprecation"})
     public static TextComponent getWeapon(boolean gang, PlayerManager pm, LivingEntity mob) {
         List<String> msgs;
         boolean basicMode = PlayerDeathMessages.getInstance().getConfig().getBoolean("Basic-Mode.Enabled");
@@ -259,7 +316,7 @@ public class DeathResolver {
         } else msgs = Messages.sortList(Messages.getPlayerDeathMessages().getStringList(cMode + "." + affiliation + ".Weapon"), pm.getPlayer(), mob);
         if (msgs.isEmpty()) return null;
         TextComponent tc = new TextComponent("");
-        if (addPrefix) tc.addExtra(bungee(Messages.getInstance().getConfig().getString("Prefix", "")));
+        if (addPrefix) tc.addExtra(parseBungee(Messages.getInstance().getConfig().getString("Prefix", "")));
         String msg = msgs.get(new Random().nextInt(msgs.size()));
         String[] sec = msg.split("::");
         String firstSection = msg.contains("::") ? (sec.length == 0 ? msg : sec[0]) : msg;
@@ -268,7 +325,7 @@ public class DeathResolver {
         String lastFont = "";
         for (String splitMessage : firstSection.split(" ")) {
             if (splitMessage.contains("%weapon%") && mobEquipment != null) {
-                ItemStack i = majorVersion() <= 9 ? mobEquipment.getItemInHand() : mobEquipment.getItemInMainHand();
+                ItemStack i = getItemInHand(mobEquipment);
                 String displayName;
                 if (Messages.hasNoCustomName(i)) {
                     if (FileSettings.CONFIG.getBoolean(Config.DISABLE_WEAPON_KILL_WITH_NO_CUSTOM_NAME_ENABLED)) {
@@ -280,9 +337,9 @@ public class DeathResolver {
                 } else {
                     displayName = Messages.getCustomName(i, pm.getPlayer());
                 }
-                tc.addExtra(solveWeapon(splitMessage, i, displayName));
+                tc.addExtra(parseWeapon(splitMessage, i, displayName));
             } else {
-                TextComponent tx = bungee(playerDeathPlaceholders(lastColor + lastFont + splitMessage, pm, mob) + " ");
+                BaseComponent tx = parseBungee(playerDeathPlaceholders(lastColor + lastFont + splitMessage, pm, mob) + " ");
                 tc.addExtra(tx);
                 for (BaseComponent bs : tx.getExtra()) {
                     if (bs.getColor() != null) lastColor = bs.getColor().toString();
@@ -293,7 +350,6 @@ public class DeathResolver {
         return addHoverAndClick(tc, sec, cmd -> playerDeathPlaceholders(cmd, pm, mob));
     }
 
-    @SuppressWarnings({"deprecation"})
     public static TextComponent getEntityDeathWeapon(Player p, Entity e, MobType mobType) {
         List<String> msgs;
         String entityName = Messages.classSimple(e);
@@ -307,7 +363,7 @@ public class DeathResolver {
         if (msgs.isEmpty()) return null;
         boolean hasOwner = e instanceof Tameable && ((Tameable) e).getOwner() != null;
         TextComponent tc = new TextComponent("");
-        if (addPrefix) tc.addExtra(bungee(Messages.getInstance().getConfig().getString("Prefix", "")));
+        if (addPrefix) tc.addExtra(parseBungee(Messages.getInstance().getConfig().getString("Prefix", "")));
         String msg = msgs.get(new Random().nextInt(msgs.size()));
         String[] sec = msg.split("::");
         String firstSection = msg.contains("::") ? (sec.length == 0 ? msg : sec[0]) : msg;
@@ -316,7 +372,7 @@ public class DeathResolver {
         String lastFont = "";
         for (String splitMessage : firstSection.split(" ")) {
             if (splitMessage.contains("%weapon%") && equipment != null) {
-                ItemStack i = majorVersion() <= 9 ? equipment.getItemInHand() : equipment.getItemInMainHand();
+                ItemStack i = getItemInHand(equipment);
                 String displayName;
                 if (Messages.hasNoCustomName(i)) {
                     if (config.getBoolean(Config.DISABLE_WEAPON_KILL_WITH_NO_CUSTOM_NAME_ENABLED)) {
@@ -327,9 +383,9 @@ public class DeathResolver {
                     }
                     displayName = Messages.getItemName(i, p);
                 } else displayName = Messages.getCustomName(i, p);
-                tc.addExtra(solveWeapon(splitMessage, i, displayName));
+                tc.addExtra(parseWeapon(splitMessage, i, displayName));
             } else {
-                TextComponent tx = bungee(entityDeathPlaceholders(lastColor + lastFont + splitMessage, p, e, hasOwner) + " ");
+                BaseComponent tx = parseBungee(entityDeathPlaceholders(lastColor + lastFont + splitMessage, p, e, hasOwner) + " ");
                 tc.addExtra(tx);
                 for (BaseComponent bs : tx.getExtra()) {
                     if (bs.getColor() != null) lastColor = bs.getColor().toString();
@@ -341,33 +397,41 @@ public class DeathResolver {
     }
 
     public static TextComponent get(boolean gang, PlayerManager pm, UUID pyro, String damageCause) {
+        return get(gang, pm, pyro, damageCause, null);
+    }
+
+    public static TextComponent get(boolean gang, PlayerManager pm, UUID pyro, String damageCause, String msgId) {
         PlayerManager p = PlayerManager.getPlayer(pyro);
-        return p == null ? null : get(gang, pm, p.getPlayer(), damageCause);
+        return p == null ? null : get(gang, pm, p.getPlayer(), damageCause, msgId);
     }
 
     public static TextComponent get(boolean gang, PlayerManager pm, LivingEntity mob, String damageCause) {
+        return get(gang, pm, mob, damageCause, null);
+    }
+
+    public static TextComponent get(boolean gang, PlayerManager pm, LivingEntity mob, String damageCause, String msgId) {
         List<String> msgs;
         boolean basicMode = PlayerDeathMessages.getInstance().getConfig().getBoolean("Basic-Mode.Enabled");
         String cMode = basicMode ? PDMode.BASIC_MODE.getValue() : PDMode.MOBS.getValue() + "." + Messages.classSimple(mob);
         String affiliation = gang ? DeathAffiliation.GANG.getValue() : DeathAffiliation.SOLO.getValue();
         if (DeathMessages.getInstance().mythicmobsEnabled && DeathMessages.getInstance().mythicMobs.isMythicMob(mob.getUniqueId())) {
             String internalMobType = DeathMessages.getInstance().mythicMobs.getMobType(mob);
-            msgs = Messages.sortList(Messages.getPlayerDeathMessages().getStringList("Custom-Mobs.Mythic-Mobs." + internalMobType + "." + affiliation + "." + damageCause), pm.getPlayer(), mob);
-        } else msgs = Messages.sortList(Messages.getPlayerDeathMessages().getStringList(cMode + "." + affiliation + "." + damageCause), pm.getPlayer(), mob);
+            msgs = Messages.sortList(getStringList(Messages.getPlayerDeathMessages(),"Custom-Mobs.Mythic-Mobs." + internalMobType + "." + affiliation + ".", msgId, damageCause), pm.getPlayer(), mob);
+        } else msgs = Messages.sortList(getStringList(Messages.getPlayerDeathMessages(), cMode + "." + affiliation + ".", msgId, damageCause), pm.getPlayer(), mob);
         if (msgs.isEmpty()) {
-            if (config.getBoolean(Config.DEFAULT_NATURAL_DEATH_NOT_DEFINED)) return getNaturalDeath(pm, damageCause);
-            if (config.getBoolean(Config.DEFAULT_MELEE_LAST_DAMAGE_NOT_DEFINED)) return get(gang, pm, mob, Messages.getSimpleCause(ENTITY_ATTACK));
+            if (config.getBoolean(Config.DEFAULT_NATURAL_DEATH_NOT_DEFINED)) return getNaturalDeath(pm, damageCause, msgId);
+            if (config.getBoolean(Config.DEFAULT_MELEE_LAST_DAMAGE_NOT_DEFINED)) return get(gang, pm, mob, Messages.getSimpleCause(ENTITY_ATTACK), msgId);
             return null;
         }
         TextComponent tc = new TextComponent("");
-        if (addPrefix) tc.addExtra(bungee(Messages.getInstance().getConfig().getString("Prefix", "")));
+        if (addPrefix) tc.addExtra(parseBungee(Messages.getInstance().getConfig().getString("Prefix", "")));
         String msg = msgs.get(new Random().nextInt(msgs.size()));
         String[] sec = msg.split("::");
         String firstSection = msg.contains("::") ? (sec.length == 0 ? msg : sec[0]) : msg;
         String lastColor = "";
         String lastFont = "";
         for (String splitMessage : firstSection.split(" ")) {
-            TextComponent tx = bungee(playerDeathPlaceholders(lastColor + lastFont + splitMessage, pm, mob) + " ");
+            BaseComponent tx = parseBungee(playerDeathPlaceholders(lastColor + lastFont + splitMessage, pm, mob) + " ");
             tc.addExtra(tx);
             for (BaseComponent bs : tx.getExtra()) {
                 if (bs.getColor() != null) {
@@ -379,7 +443,6 @@ public class DeathResolver {
         return addHoverAndClick(tc, sec, cmd -> playerDeathPlaceholders(cmd, pm, mob));
     }
 
-    @SuppressWarnings({"deprecation"})
     public static TextComponent getProjectile(boolean gang, PlayerManager pm, LivingEntity mob, String projectileDamage) {
         List<String> msgs;
         boolean basicMode = PlayerDeathMessages.getInstance().getConfig().getBoolean("Basic-Mode.Enabled");
@@ -391,7 +454,7 @@ public class DeathResolver {
         } else msgs = Messages.sortList(Messages.getPlayerDeathMessages().getStringList(cMode + "." + affiliation + "." + projectileDamage), pm.getPlayer(), mob);
         if (msgs.isEmpty()) return null;
         TextComponent tc = new TextComponent("");
-        if (addPrefix) tc.addExtra(bungee(Messages.getInstance().getConfig().getString("Prefix", "")));
+        if (addPrefix) tc.addExtra(parseBungee(Messages.getInstance().getConfig().getString("Prefix", "")));
         String msg = msgs.get(new Random().nextInt(msgs.size()));
         String[] sec = msg.split("::");
         String firstSection = msg.contains("::") ? (sec.length == 0 ? msg : sec[0]) : msg;
@@ -400,7 +463,7 @@ public class DeathResolver {
         String lastFont = "";
         for (String splitMessage : firstSection.split(" ")) {
             if (splitMessage.contains("%weapon%") && (getSettings().getBoolean("Ignore-Projectile-Type") || pm.getLastProjectileEntity() instanceof Arrow) && equipment != null) {
-                ItemStack i = majorVersion() < 9 ? equipment.getItemInHand() : equipment.getItemInMainHand();
+                ItemStack i = getItemInHand(equipment);
                 String displayName;
                 if (Messages.hasNoCustomName(i)) {
                     if (config.getBoolean(Config.DISABLE_WEAPON_KILL_WITH_NO_CUSTOM_NAME_ENABLED) && !config.getString(Config.DISABLE_WEAPON_KILL_WITH_NO_CUSTOM_NAME_SOURCE_PROJECTILE_DEFAULT_TO).equals(projectileDamage)) {
@@ -410,9 +473,9 @@ public class DeathResolver {
                 } else {
                     displayName = Messages.getCustomName(i, pm.getPlayer());
                 }
-                tc.addExtra(solveWeapon(splitMessage, i, displayName));
+                tc.addExtra(parseWeapon(splitMessage, i, displayName));
             } else {
-                TextComponent tx = bungee(playerDeathPlaceholders(lastColor + lastFont + splitMessage, pm, mob) + " ");
+                BaseComponent tx = parseBungee(playerDeathPlaceholders(lastColor + lastFont + splitMessage, pm, mob) + " ");
                 tc.addExtra(tx);
                 for (BaseComponent bs : tx.getExtra()) {
                     if (bs.getColor() != null) lastColor = bs.getColor().toString();
@@ -423,7 +486,6 @@ public class DeathResolver {
         return addHoverAndClick(tc, sec, cmd -> playerDeathPlaceholders(cmd, pm, mob));
     }
 
-    @SuppressWarnings({"deprecation"})
     public static TextComponent getEntityDeathProjectile(Player p, EntityManager em, String projectileDamage, MobType mobType) {
         List<String> msgs;
         String entityName = Messages.classSimple(em.getEntity());
@@ -440,7 +502,7 @@ public class DeathResolver {
         Entity entity = em.getEntity();
         boolean hasOwner = entity instanceof Tameable && ((Tameable) entity).getOwner() != null;
         TextComponent tc = new TextComponent("");
-        if (addPrefix) tc.addExtra(bungee(Messages.getInstance().getConfig().getString("Prefix", "")));
+        if (addPrefix) tc.addExtra(parseBungee(Messages.getInstance().getConfig().getString("Prefix", "")));
         String msg = msgs.get(new Random().nextInt(msgs.size()));
         String[] sec = msg.split("::");
         String firstSection = msg.contains("::") ? (sec.length == 0 ? msg : sec[0]) : msg;
@@ -449,7 +511,7 @@ public class DeathResolver {
         String lastFont = "";
         for (String splitMessage : firstSection.split(" ")) {
             if (splitMessage.contains("%weapon%") && (getSettings().getBoolean("Ignore-Projectile-Type") || em.getLastProjectileEntity() instanceof Arrow) && equipment != null) {
-                ItemStack i = majorVersion() < 9 ? equipment.getItemInHand() : equipment.getItemInMainHand();
+                ItemStack i = getItemInHand(equipment);
                 String displayName;
                 if (Messages.hasNoCustomName(i)) {
                     if (config.getBoolean(Config.DISABLE_WEAPON_KILL_WITH_NO_CUSTOM_NAME_ENABLED) && !config.getString(Config.DISABLE_WEAPON_KILL_WITH_NO_CUSTOM_NAME_SOURCE_PROJECTILE_DEFAULT_TO).equals(projectileDamage)) {
@@ -459,9 +521,9 @@ public class DeathResolver {
                 } else {
                     displayName = Messages.getCustomName(i, p);
                 }
-                tc.addExtra(solveWeapon(splitMessage, i, displayName));
+                tc.addExtra(parseWeapon(splitMessage, i, displayName));
             } else {
-                TextComponent tx = bungee(entityDeathPlaceholders(lastColor + lastFont + splitMessage, p, em.getEntity(), hasOwner) + " ");
+                BaseComponent tx = parseBungee(entityDeathPlaceholders(lastColor + lastFont + splitMessage, p, em.getEntity(), hasOwner) + " ");
                 tc.addExtra(tx);
                 for (BaseComponent bs : tx.getExtra()) {
                     if (bs.getColor() != null) {
@@ -475,10 +537,16 @@ public class DeathResolver {
     }
 
     public static TextComponent getEntityDeath(UUID pyro, Entity entity, String damageCause, MobType mobType) {
+        return getEntityDeath(pyro, entity, damageCause, mobType, null);
+    }
+    public static TextComponent getEntityDeath(UUID pyro, Entity entity, String damageCause, MobType mobType, String msgId) {
         PlayerManager pm = PlayerManager.getPlayer(pyro);
-        return pm == null ? null : getEntityDeath(pm.getPlayer(), entity, damageCause, mobType);
+        return pm == null ? null : getEntityDeath(pm.getPlayer(), entity, damageCause, mobType, msgId);
     }
     public static TextComponent getEntityDeath(Player player, Entity entity, String damageCause, MobType mobType) {
+        return getEntityDeath(player, entity, damageCause, mobType, null);
+    }
+    public static TextComponent getEntityDeath(Player player, Entity entity, String damageCause, MobType mobType, String msgId) {
         boolean hasOwner = entity instanceof Tameable && ((Tameable) entity).getOwner() != null;
         List<String> msgs;
         if (hasOwner) {
@@ -487,19 +555,19 @@ public class DeathResolver {
             String internalMobType = null;
             if (DeathMessages.getInstance().mythicmobsEnabled && DeathMessages.getInstance().mythicMobs.isMythicMob(entity.getUniqueId()))
                 internalMobType = DeathMessages.getInstance().mythicMobs.getMobType(entity);
-            msgs = Messages.sortList(Messages.getEntityDeathMessages().getStringList("Mythic-Mobs-Entities." + internalMobType + "." + damageCause), player, entity);
-        } else msgs = Messages.sortList(Messages.getEntityDeathMessages().getStringList("Entities." + Messages.classSimple(entity) + "." + damageCause), player, entity);
+            msgs = Messages.sortList(getStringList(Messages.getEntityDeathMessages(), "Mythic-Mobs-Entities." + internalMobType + ".", msgId, damageCause), player, entity);
+        } else msgs = Messages.sortList(getStringList(Messages.getEntityDeathMessages(), "Entities." + Messages.classSimple(entity) + ".", msgId, damageCause), player, entity);
 
         if (msgs.isEmpty()) return null;
         TextComponent tc = new TextComponent("");
-        if (addPrefix) tc.addExtra(bungee(Messages.getInstance().getConfig().getString("Prefix", "")));
+        if (addPrefix) tc.addExtra(parseBungee(Messages.getInstance().getConfig().getString("Prefix", "")));
         String msg = msgs.get(new Random().nextInt(msgs.size()));
         String[] sec = msg.split("::");
         String firstSection = msg.contains("::") ? (sec.length == 0 ? msg : sec[0]) : msg;
         String lastColor = "";
         String lastFont = "";
         for (String splitMessage : firstSection.split(" ")) {
-            TextComponent tx = bungee(entityDeathPlaceholders(lastColor + lastFont + splitMessage, player, entity, hasOwner) + " ");
+            BaseComponent tx = parseBungee(entityDeathPlaceholders(lastColor + lastFont + splitMessage, player, entity, hasOwner) + " ");
             tc.addExtra(tx);
             for (BaseComponent bs : tx.getExtra()) {
                 if (bs.getColor() != null) {
@@ -550,6 +618,7 @@ public class DeathResolver {
         if (mob == null) {
             Block playerLoc = pm.getLastLocation().getBlock();
             World world = playerLoc.getWorld();
+            String msgId = pm.getDamageSourceMsgId();
             msg2 = Messages.colorize(msg
                     .replace("%player%", Messages.getPlayerNameWithPlaceholder(pm.getPlayer()))
                     .replace("%player_display%", pm.getPlayer().getDisplayName())
@@ -557,7 +626,8 @@ public class DeathResolver {
                     .replace("%world_environment%", Messages.getEnvironment(world.getEnvironment()))
                     .replace("%x%", String.valueOf(playerLoc.getX()))
                     .replace("%y%", String.valueOf(playerLoc.getY()))
-                    .replace("%z%", String.valueOf(playerLoc.getZ())));
+                    .replace("%z%", String.valueOf(playerLoc.getZ())))
+                    .replace("%source%", String.valueOf(msgId));
             try {
                 msg2 = msg2.replace("%biome%", playerLoc.getBiome().name());
             } catch (NullPointerException e) {
@@ -611,4 +681,8 @@ public class DeathResolver {
         return Settings.getInstance().getConfig();
     }
 
+    @SuppressWarnings({"deprecation"})
+    public static ItemStack getItemInHand(EntityEquipment equipment) {
+        return majorVersion() < 9 ? equipment.getItemInHand() : equipment.getItemInMainHand();
+    }
 }

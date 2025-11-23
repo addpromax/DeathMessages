@@ -4,12 +4,13 @@ import dev.mrshawn.deathmessages.DeathMessages;
 import dev.mrshawn.deathmessages.enums.MobType;
 import dev.mrshawn.deathmessages.files.Config;
 import dev.mrshawn.deathmessages.files.FileSettings;
+import dev.mrshawn.deathmessages.utils.DeathResolver;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.entity.EntityDamageEvent;
-import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,6 +22,7 @@ public class EntityManager {
     private final UUID entityUUID;
     private final MobType mobType;
     private EntityDamageEvent.DamageCause damageCause;
+    private @Nullable String damageSourceMsgId;
     private PlayerManager lastPlayerDamager;
     private Entity lastExplosiveEntity;
     private Projectile lastPlayerProjectile;
@@ -52,6 +54,18 @@ public class EntityManager {
         return this.damageCause;
     }
 
+    public void setDamageSourceMsgId(EntityDamageEvent event) {
+        this.damageSourceMsgId = DeathResolver.getDamageSourceMsgId(event);
+    }
+
+    public void setDamageSourceMsgId(String damageSourceMsgId) {
+        this.damageSourceMsgId = damageSourceMsgId;
+    }
+
+    @Nullable
+    public String getDamageSourceMsgId() {
+        return damageSourceMsgId;
+    }
 
     public void setLastPlayerDamager(PlayerManager pm) {
         setLastExplosiveEntity(null);
@@ -63,11 +77,9 @@ public class EntityManager {
         if (this.lastPlayerTask != null) {
             this.lastPlayerTask.cancel();
         }
-        this.lastPlayerTask = new BukkitRunnable() {
-            public void run() {
-                EntityManager.this.destroy();
-            }
-        }.runTaskLater(DeathMessages.getInstance(), config.getInt(Config.EXPIRE_LAST_DAMAGE_EXPIRE_ENTITY) * 20L);
+        DeathMessages.getInstance().getScheduler().runLater(
+                EntityManager.this::destroy,
+                config.getInt(Config.EXPIRE_LAST_DAMAGE_EXPIRE_ENTITY) * 20L);
         this.damageCause = EntityDamageEvent.DamageCause.CUSTOM;
     }
 

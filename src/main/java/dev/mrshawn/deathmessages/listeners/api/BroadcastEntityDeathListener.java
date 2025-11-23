@@ -1,6 +1,5 @@
 package dev.mrshawn.deathmessages.listeners.api;
 
-import com.sk89q.worldguard.protection.flags.StateFlag;
 import dev.mrshawn.deathmessages.DeathMessages;
 import dev.mrshawn.deathmessages.api.EntityManager;
 import dev.mrshawn.deathmessages.api.PlayerManager;
@@ -9,8 +8,8 @@ import dev.mrshawn.deathmessages.config.Messages;
 import dev.mrshawn.deathmessages.files.Config;
 import dev.mrshawn.deathmessages.files.FileSettings;
 import dev.mrshawn.deathmessages.listeners.PluginMessaging;
+import dev.mrshawn.deathmessages.utils.ComponentUtils;
 import dev.mrshawn.deathmessages.utils.DeathResolver;
-import net.md_5.bungee.chat.ComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
@@ -52,21 +51,21 @@ public class BroadcastEntityDeathListener implements Listener {
                         PlayerManager pms = PlayerManager.getPlayer(pls);
                         if (privateTameable && pms.getUUID().equals(pm.getPlayer().getUniqueId())) {
                             if (pms.getMessagesEnabled()) {
-                                pls.spigot().sendMessage(e.getTextComponent());
+                                ComponentUtils.send(pls, e.getTextComponent());
                             }
                         } else {
                             if (pms.getMessagesEnabled()) {
-                                if (DeathMessages.worldGuardExtension != null && DeathMessages.worldGuardExtension.getRegionState(pls, e.getMessageType().getValue()).equals(StateFlag.State.DENY)) {
+                                if (DeathMessages.worldGuardExtension != null && DeathMessages.worldGuardExtension.getRegionState(pls, e.getMessageType().getValue()).equals("DENY")) {
                                     return;
                                 }
-                                pls.spigot().sendMessage(e.getTextComponent());
-                                PluginMessaging.sendPluginMSG(pms.getPlayer(), e.getTextComponent().toString());
+                                ComponentUtils.send(pls, e.getTextComponent());
+                                PluginMessaging.sendPluginMSG(pms.getPlayer(), e.getTextComponent());
                             }
                         }
                     }
                 }
             }
-            PluginMessaging.sendPluginMSG(e.getPlayer().getPlayer(), ComponentSerializer.toString(e.getTextComponent()));
+            PluginMessaging.sendPluginMSG(e.getPlayer().getPlayer(), e.getTextComponent());
         }
         EntityManager em = EntityManager.getEntity(e.getEntity().getUniqueId());
         if (em != null) em.destroy();

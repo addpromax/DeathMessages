@@ -16,15 +16,14 @@ import dev.mrshawn.deathmessages.files.FileSettings;
 import dev.mrshawn.deathmessages.utils.DeathResolver;
 import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
-import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.*;
-import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.plugin.EventExecutor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,8 +33,14 @@ import static dev.mrshawn.deathmessages.config.Messages.classSimple;
 
 public class EntityDeath implements Listener {
     private static final FileSettings<Config> config = FileSettings.CONFIG;
+    public EntityDeath(DeathMessages plugin) {
+        EventPriority priority = DeathMessages.getEventPriority();
+        EventExecutor executor = (listener, e) -> onEntityDeath((EntityDeathEvent) e);
+        Bukkit.getPluginManager().registerEvent(EntityDeathEvent.class, this, priority, executor, plugin);
+    }
 
     synchronized void onEntityDeath(EntityDeathEvent e) {
+        StackTraceElement[] stackTrace = new Exception().getStackTrace();
         EntityManager em;
         if (e.getEntity() instanceof Player) {
             Player p = (Player) e.getEntity();
@@ -46,6 +51,7 @@ public class EntityDeath implements Listener {
                     pm.setLastDamageCause(EntityDamageEvent.DamageCause.CUSTOM);
                 } else {
                     pm.setLastDamageCause(e.getEntity().getLastDamageCause().getCause());
+                    pm.setDamageSourceMsgId(e.getEntity().getLastDamageCause());
                 }
                 if (pm.isBlacklisted()) {
                     return;
@@ -56,7 +62,7 @@ public class EntityDeath implements Listener {
                         if (tx == null) {
                             return;
                         }
-                        BroadcastDeathMessageEvent event = new BroadcastDeathMessageEvent(p, null, MessageType.NATURAL, tx, getWorlds(p), false);
+                        BroadcastDeathMessageEvent event = new BroadcastDeathMessageEvent(p, null, MessageType.NATURAL, tx, getWorlds(p), false, stackTrace);
                         Bukkit.getPluginManager().callEvent(event);
                         return;
                     } else if (pm.getLastExplosiveEntity() instanceof TNTPrimed) {
@@ -64,7 +70,7 @@ public class EntityDeath implements Listener {
                         if (tx2 == null) {
                             return;
                         }
-                        BroadcastDeathMessageEvent event2 = new BroadcastDeathMessageEvent(p, null, MessageType.NATURAL, tx2, getWorlds(p), false);
+                        BroadcastDeathMessageEvent event2 = new BroadcastDeathMessageEvent(p, null, MessageType.NATURAL, tx2, getWorlds(p), false, stackTrace);
                         Bukkit.getPluginManager().callEvent(event2);
                         return;
                     } else if (pm.getLastExplosiveEntity() instanceof Firework) {
@@ -72,7 +78,7 @@ public class EntityDeath implements Listener {
                         if (tx3 == null) {
                             return;
                         }
-                        BroadcastDeathMessageEvent event3 = new BroadcastDeathMessageEvent(p, null, MessageType.NATURAL, tx3, getWorlds(p), false);
+                        BroadcastDeathMessageEvent event3 = new BroadcastDeathMessageEvent(p, null, MessageType.NATURAL, tx3, getWorlds(p), false, stackTrace);
                         Bukkit.getPluginManager().callEvent(event3);
                         return;
                     } else if (pm.getLastClimbing() != null && pm.getLastDamage().equals(EntityDamageEvent.DamageCause.FALL)) {
@@ -80,7 +86,7 @@ public class EntityDeath implements Listener {
                         if (tx4 == null) {
                             return;
                         }
-                        BroadcastDeathMessageEvent event4 = new BroadcastDeathMessageEvent(p, null, MessageType.NATURAL, tx4, getWorlds(p), false);
+                        BroadcastDeathMessageEvent event4 = new BroadcastDeathMessageEvent(p, null, MessageType.NATURAL, tx4, getWorlds(p), false, stackTrace);
                         Bukkit.getPluginManager().callEvent(event4);
                         return;
                     } else if (pm.getLastDamage().equals(EntityDamageEvent.DamageCause.BLOCK_EXPLOSION)) {
@@ -92,18 +98,18 @@ public class EntityDeath implements Listener {
                         if (explosionManager.getMaterial().name().contains("BED")) {
                             tx5 = DeathResolver.getNaturalDeath(pm, "Bed");
                         }
-                        if (DeathMessages.majorVersion() >= 16 && explosionManager.getMaterial().equals(Material.RESPAWN_ANCHOR)) {
+                        if (DeathMessages.majorVersion() >= 16 && explosionManager.getMaterial().name().equalsIgnoreCase("RESPAWN_ANCHOR")) {
                             tx5 = DeathResolver.getNaturalDeath(pm, "Respawn-Anchor");
                         }
                         if (tx5 == null) {
                             return;
                         }
-                        BroadcastDeathMessageEvent event5 = new BroadcastDeathMessageEvent(p, null, MessageType.NATURAL, tx5, getWorlds(p), false);
+                        BroadcastDeathMessageEvent event5 = new BroadcastDeathMessageEvent(p, null, MessageType.NATURAL, tx5, getWorlds(p), false, stackTrace);
                         Bukkit.getPluginManager().callEvent(event5);
                         return;
                     } else {
                         if (pm.getLastDamage().equals(EntityDamageEvent.DamageCause.PROJECTILE)) {
-                            BroadcastDeathMessageEvent event6 = new BroadcastDeathMessageEvent(p, null, MessageType.NATURAL, DeathResolver.getNaturalDeath(pm, Messages.getSimpleProjectile(pm.getLastProjectileEntity())), getWorlds(p), false);
+                            BroadcastDeathMessageEvent event6 = new BroadcastDeathMessageEvent(p, null, MessageType.NATURAL, DeathResolver.getNaturalDeath(pm, Messages.getSimpleProjectile(pm.getLastProjectileEntity())), getWorlds(p), false, stackTrace);
                             Bukkit.getPluginManager().callEvent(event6);
                             return;
                         }
@@ -111,7 +117,7 @@ public class EntityDeath implements Listener {
                         if (tx6 == null) {
                             return;
                         }
-                        BroadcastDeathMessageEvent event7 = new BroadcastDeathMessageEvent(p, null, MessageType.NATURAL, tx6, getWorlds(p), false);
+                        BroadcastDeathMessageEvent event7 = new BroadcastDeathMessageEvent(p, null, MessageType.NATURAL, tx6, getWorlds(p), false, stackTrace);
                         Bukkit.getPluginManager().callEvent(event7);
                         return;
                     }
@@ -137,11 +143,11 @@ public class EntityDeath implements Listener {
                     return;
                 }
                 if (ent instanceof Player) {
-                    BroadcastDeathMessageEvent event8 = new BroadcastDeathMessageEvent(p, (LivingEntity) pm.getLastEntityDamager(), MessageType.PLAYER, tx7, getWorlds(p), gangKill);
+                    BroadcastDeathMessageEvent event8 = new BroadcastDeathMessageEvent(p, (LivingEntity) pm.getLastEntityDamager(), MessageType.PLAYER, tx7, getWorlds(p), gangKill, stackTrace);
                     Bukkit.getPluginManager().callEvent(event8);
                     return;
                 }
-                BroadcastDeathMessageEvent event9 = new BroadcastDeathMessageEvent(p, (LivingEntity) pm.getLastEntityDamager(), MessageType.MOB, tx7, getWorlds(p), gangKill);
+                BroadcastDeathMessageEvent event9 = new BroadcastDeathMessageEvent(p, (LivingEntity) pm.getLastEntityDamager(), MessageType.MOB, tx7, getWorlds(p), gangKill, stackTrace);
                 Bukkit.getPluginManager().callEvent(event9);
                 return;
             }
@@ -174,7 +180,10 @@ public class EntityDeath implements Listener {
                     List<String> worlds = Settings.getInstance().getConfig().getStringList("World-Groups." + groups);
                     if (worlds.contains(e.getWorld().getName())) {
                         for (String single : worlds) {
-                            broadcastWorlds.add(Bukkit.getWorld(single));
+                            World world = Bukkit.getWorld(single);
+                            if (world != null) {
+                                broadcastWorlds.add(world);
+                            }
                         }
                     }
                 }
@@ -185,40 +194,5 @@ public class EntityDeath implements Listener {
             return broadcastWorlds;
         }
         return Bukkit.getWorlds();
-    }
-
-    @EventHandler(priority = EventPriority.LOWEST)
-    public void onEntityDeath_LOWEST(EntityDeathEvent e) {
-        if (DeathMessages.getEventPriority().equals(EventPriority.LOWEST)) {
-            onEntityDeath(e);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.LOW)
-    public void onEntityDeath_LOW(EntityDeathEvent e) {
-        if (DeathMessages.getEventPriority().equals(EventPriority.LOW)) {
-            onEntityDeath(e);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.NORMAL)
-    public void onEntityDeath_NORMAL(EntityDeathEvent e) {
-        if (DeathMessages.getEventPriority().equals(EventPriority.NORMAL)) {
-            onEntityDeath(e);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.HIGH)
-    public void onEntityDeath_HIGH(EntityDeathEvent e) {
-        if (DeathMessages.getEventPriority().equals(EventPriority.HIGH)) {
-            onEntityDeath(e);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST)
-    public void onEntityDeath_HIGHEST(EntityDeathEvent e) {
-        if (DeathMessages.getEventPriority().equals(EventPriority.HIGHEST)) {
-            onEntityDeath(e);
-        }
     }
 }

@@ -1,9 +1,11 @@
 package dev.mrshawn.deathmessages.api;
 
+import com.tcoded.folialib.wrapper.task.WrappedTask;
 import dev.mrshawn.deathmessages.DeathMessages;
 import dev.mrshawn.deathmessages.config.UserData;
 import dev.mrshawn.deathmessages.files.Config;
 import dev.mrshawn.deathmessages.files.FileSettings;
+import dev.mrshawn.deathmessages.utils.DeathResolver;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -12,8 +14,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.inventory.Inventory;
-import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.scheduler.BukkitTask;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
@@ -24,15 +25,16 @@ public class PlayerManager {
     private boolean messagesEnabled;
     private boolean isBlacklisted;
     private EntityDamageEvent.DamageCause damageCause;
+    private @Nullable String damageSourceMsgId;
     private Entity lastEntityDamager;
     private Entity lastExplosiveEntity;
     private Projectile lastProjectileEntity;
     private Material climbing;
     private Location explosionCauser;
     private Location location;
-    private BukkitTask cooldownTask;
+    private WrappedTask cooldownTask;
     private Inventory cachedInventory;
-    private BukkitTask lastEntityTask;
+    private WrappedTask lastEntityTask;
     private static final FileSettings<Config> config = FileSettings.CONFIG;
     private static final List<PlayerManager> players = new ArrayList<>();
     private int cooldown = 0;
@@ -102,6 +104,18 @@ public class PlayerManager {
         return this.damageCause;
     }
 
+    public void setDamageSourceMsgId(EntityDamageEvent event) {
+        this.damageSourceMsgId = DeathResolver.getDamageSourceMsgId(event);
+    }
+
+    public void setDamageSourceMsgId(String damageSourceMsgId) {
+        this.damageSourceMsgId = damageSourceMsgId;
+    }
+
+    @Nullable
+    public String getDamageSourceMsgId() {
+        return damageSourceMsgId;
+    }
 
     public void setLastEntityDamager(Entity e) {
         setLastExplosiveEntity(null);
@@ -113,11 +127,9 @@ public class PlayerManager {
         if (this.lastEntityTask != null) {
             this.lastEntityTask.cancel();
         }
-        this.lastEntityTask = new BukkitRunnable() {
-            public void run() {
-                PlayerManager.this.setLastEntityDamager(null);
-            }
-        }.runTaskLater(DeathMessages.getInstance(), config.getInt(Config.EXPIRE_LAST_DAMAGE_EXPIRE_PLAYER) * 20L);
+        DeathMessages.getInstance().getScheduler().runLater(
+                () -> setLastEntityDamager(null),
+                config.getInt(Config.EXPIRE_LAST_DAMAGE_EXPIRE_PLAYER) * 20L);
     }
 
     public Entity getLastEntityDamager() {
@@ -167,14 +179,12 @@ public class PlayerManager {
 
     public void setCooldown() {
         this.cooldown = config.getInt(Config.COOLDOWN);
-        this.cooldownTask = new BukkitRunnable() {
-            public void run() {
-                if (PlayerManager.this.cooldown <= 0) {
-                    cancel();
-                }
-                PlayerManager.this.cooldown--;
+        this.cooldownTask = DeathMessages.getInstance().getScheduler().runTimer(() -> {
+            if (PlayerManager.this.cooldown <= 0) {
+                this.cooldownTask.cancel();
             }
-        }.runTaskTimer(DeathMessages.getInstance(), 0L, 20L);
+            PlayerManager.this.cooldown--;
+        }, 1L, 20L);
     }
 
     public void setCachedInventory(Inventory inventory) {

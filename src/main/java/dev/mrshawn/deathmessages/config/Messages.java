@@ -3,12 +3,12 @@ package dev.mrshawn.deathmessages.config;
 import com.meowj.langutils.lang.LanguageHelper;
 import dev.mrshawn.deathmessages.DeathMessages;
 import dev.mrshawn.deathmessages.utils.CommentedConfiguration;
+import dev.mrshawn.deathmessages.utils.StringUtils;
 import me.clip.placeholderapi.PlaceholderAPI;
 import net.md_5.bungee.api.ChatColor;
 import net.md_5.bungee.api.chat.BaseComponent;
 import net.md_5.bungee.api.chat.TextComponent;
 import net.md_5.bungee.api.chat.TranslatableComponent;
-import org.apache.commons.lang.StringUtils;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -217,63 +217,63 @@ public class Messages {
     }
 
     public static String getSimpleCause(EntityDamageEvent.DamageCause damageCause) {
-        switch (damageCause) {
-            case CONTACT:
+        switch (damageCause.name().toUpperCase()) {
+            case "CONTACT":
                 return "Contact";
-            case ENTITY_ATTACK:
+            case "ENTITY_ATTACK":
                 return "Melee";
-            case PROJECTILE:
+            case "PROJECTILE":
                 return "Projectile";
-            case SUFFOCATION:
+            case "SUFFOCATION":
                 return "Suffocation";
-            case FALL:
+            case "FALL":
                 return "Fall";
-            case FIRE:
+            case "FIRE":
                 return "Fire";
-            case FIRE_TICK:
+            case "FIRE_TICK":
                 return "Fire-Tick";
-            case MELTING:
+            case "MELTING":
                 return "Melting";
-            case LAVA:
+            case "LAVA":
                 return "Lava";
-            case DROWNING:
+            case "DROWNING":
                 return "Drowning";
-            case BLOCK_EXPLOSION:
-            case ENTITY_EXPLOSION:
+            case "BLOCK_EXPLOSION":
+            case "ENTITY_EXPLOSION":
                 return "Explosion";
-            case VOID:
+            case "VOID":
                 return "Void";
-            case LIGHTNING:
+            case "LIGHTNING":
                 return "Lightning";
-            case SUICIDE:
+            case "SUICIDE":
                 return "Suicide";
-            case STARVATION:
+            case "STARVATION":
                 return "Starvation";
-            case POISON:
+            case "POISON":
                 return "Poison";
-            case MAGIC:
+            case "MAGIC":
                 return "Magic";
-            case WITHER:
+            case "WITHER":
                 return "Wither";
-            case FALLING_BLOCK:
+            case "FALLING_BLOCK":
                 return "Falling-Block";
-            case THORNS:
+            case "THORNS":
                 return "Thorns";
-            case DRAGON_BREATH:
+            case "DRAGON_BREATH":
                 return "Dragon-Breath";
-            case CUSTOM:
+            case "CUSTOM":
                 return "Custom";
-            case FLY_INTO_WALL:
+            case "FLY_INTO_WALL":
                 return "Fly-Into-Wall";
-            case HOT_FLOOR:
+            case "HOT_FLOOR":
                 return "Hot-Floor";
-            case CRAMMING:
+            case "CRAMMING":
                 return "Cramming";
-            case DRYOUT:
+            case "DRYOUT":
                 return "Dryout";
-            case FREEZE:
+            case "FREEZE":
                 return "Freeze";
-            case SONIC_BOOM:
+            case "SONIC_BOOM":
                 return "Sonic-Boom";
             default:
                 return "Unknown";
@@ -357,10 +357,15 @@ public class Messages {
     }
 
     public static String getCustomName(Entity entity, Player player) {
-        if (entity instanceof Player) return getPlayerNameWithPlaceholder((Player) entity);
+        if (entity instanceof Player) {
+            return getPlayerNameWithPlaceholder((Player) entity);
+        }
         String customName = entity.getCustomName();
-        if (customName == null) return getEntityName(entity, player);
-        return customName;
+        if (customName == null) {
+            return getEntityName(entity, player);
+        } else {
+            return customName;
+        }
     }
 
     public static boolean isNotNumeric(String s) {
@@ -448,7 +453,12 @@ public class Messages {
         }
     }
 
+    @Deprecated
     public static TextComponent bungee(String message) {
+        return new TextComponent(parseBungee(message));
+    }
+
+    public static BaseComponent parseBungee(String message) {
         List<BaseComponent> components = split(translatePattern, colorize(message), regexResult -> {
             if (!regexResult.isMatched) {
                 return new TextComponent(TextComponent.fromLegacyText(regexResult.text));
@@ -457,9 +467,7 @@ public class Messages {
             }
         });
         if (components.size() == 1) {
-            BaseComponent component = components.get(0);
-            if (component instanceof TextComponent) return (TextComponent) component;
-            return new TextComponent(component);
+            return components.get(0);
         }
         TextComponent tc = new TextComponent("");
         for (BaseComponent component : components) {
